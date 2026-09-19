@@ -113,7 +113,7 @@ model Partner {
   email String?
   phone String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
   @@unique([companyId,code])
   @@index([companyId,type])
 }
@@ -142,7 +142,7 @@ model Transaction {
   notes String?
   createdById String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
   @@index([companyId,transactionAt])
   @@index([companyId,sourceKey])
   @@index([companyId,itemId,warehouseId])
@@ -177,7 +177,7 @@ model ImportTemplate {
   importType ImportType
   mapping Json
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
   @@unique([companyId,name])
 }
 
@@ -206,7 +206,7 @@ model ReportPeriod {
   lockedAt DateTime?
   publishedAt DateTime?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
   @@unique([companyId,year,month])
 }
 
