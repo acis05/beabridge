@@ -1,0 +1,1 @@
+import { getCurrentUser } from '@/lib/auth';export async function GET(){const u=await getCurrentUser();if(!u)return Response.json({user:null},{status:401});return Response.json({user:{id:u.id,name:u.name,email:u.email,role:u.role,company:u.company.name}})}

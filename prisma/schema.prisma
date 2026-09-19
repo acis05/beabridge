@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  SUPERVISOR
+  CUSTOMS
+  AUDITOR
+}
+
+enum TransactionType {
+  INBOUND
+  OUTBOUND
+  TRANSFER
+  PRODUCTION
+  ADJUSTMENT
+}
+
+enum ImportType {
+  MASTER_ITEM
+  INVENTORY_MOVEMENT
+  PURCHASE_RECEIPT
+  SALES_DELIVERY
+  WAREHOUSE_TRANSFER
+  ADJUSTMENT
+  STOCK_OPNAME
+  PRODUCTION
+}
+
+enum PeriodStatus {
+  DRAFT
+  VALIDATED
+  RECONCILED
+  FINAL
+  PUBLISHED
+}
+
+model Company {
+  id           String        @id @default(cuid())
+  name         String
+  createdAt    DateTime      @default(now())
+  users        User[]
+  items        Item[]
+  warehouses   Warehouse[]
+  transactions Transaction[]
+  imports      ImportJob[]
+  importTemplates ImportTemplate[]
+  stockOpnames StockOpname[]
+  periods      ReportPeriod[]
+  auditLogs    AuditLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(OPERATOR)
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  auditLogs    AuditLog[]
+}
+
+model Item {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  hsCode    String?
+  unit      String   @default("PCS")
+  category  String?
+  customsUnit String?
+  countryOfOrigin String?
+  createdAt DateTime @default(now())
+  transactions Transaction[]
+  stockOpnames StockOpname[]
+  @@unique([companyId, code])
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  createdAt DateTime @default(now())
+  transactions Transaction[]
+  stockOpnames StockOpname[]
+  @@unique([companyId, code])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          Item            @relation(fields: [itemId], references: [id])
+  warehouseId   String
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  type          TransactionType
+  qty           Decimal         @db.Decimal(18, 4)
+  transactionAt DateTime
+  referenceNo   String?
+  invoiceNo     String?
+  partnerName   String?
+  customsDocType String?
+  customsDocNo  String?
+  customsDocDate DateTime?
+  lotNo         String?
+  source        String          @default("MANUAL")
+  sourceKey     String?
+  transferGroupId String?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  @@index([companyId, transactionAt])
+  @@index([companyId, sourceKey])
+  @@index([companyId, itemId, warehouseId])
+}
+
+model StockOpname {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          Item     @relation(fields: [itemId], references: [id])
+  warehouseId   String
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+  opnameAt      DateTime
+  systemQty     Decimal  @db.Decimal(18,4)
+  physicalQty   Decimal  @db.Decimal(18,4)
+  differenceQty Decimal  @db.Decimal(18,4)
+  referenceNo   String?
+  notes         String?
+  source        String   @default("ACCURATE_IMPORT")
+  sourceKey     String?
+  createdAt     DateTime @default(now())
+  @@index([companyId, opnameAt])
+  @@index([companyId, sourceKey])
+}
+
+model ImportTemplate {
+  id        String     @id @default(cuid())
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  importType ImportType
+  mapping   Json
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  @@unique([companyId, name])
+}
+
+model ImportJob {
+  id            String     @id @default(cuid())
+  companyId     String
+  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fileName      String
+  source        String
+  importType    ImportType @default(INVENTORY_MOVEMENT)
+  rowCount      Int        @default(0)
+  importedCount Int        @default(0)
+  skippedCount  Int        @default(0)
+  errorCount    Int        @default(0)
+  details       Json?
+  createdAt     DateTime   @default(now())
+}
+
+model ReportPeriod {
+  id        String       @id @default(cuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  status    PeriodStatus @default(DRAFT)
+  lockedAt  DateTime?
+  publishedAt DateTime?
+  createdAt DateTime     @default(now())
+  @@unique([companyId, year, month])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  @@index([companyId, createdAt])
+}

@@ -1,0 +1,10 @@
+'use client';
+import { useState } from 'react';
+const order=['DRAFT','VALIDATED','RECONCILED','FINAL','PUBLISHED'];
+export default function PeriodManager({periods,role}:{periods:any[],role:string}){
+  const [msg,setMsg]=useState('');
+  async function create(e:any){e.preventDefault();const fd=new FormData(e.currentTarget);const r=await fetch('/api/periods',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(fd.entries()))});setMsg(r.ok?'Periode dibuat.':'Gagal membuat periode.');if(r.ok)setTimeout(()=>location.reload(),500)}
+  async function advance(id:string,status:string){const next=order[Math.min(order.indexOf(status)+1,order.length-1)];const r=await fetch('/api/periods',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status:next})});setMsg(r.ok?`Status menjadi ${next}.`:'Perubahan status ditolak.');if(r.ok)setTimeout(()=>location.reload(),500)}
+  const readOnly=role==='CUSTOMS'||role==='AUDITOR';
+  return <><form className="row" onSubmit={create} style={{marginBottom:18}}><input className="input" style={{maxWidth:140}} name="year" type="number" defaultValue={new Date().getFullYear()} required/><select className="input" style={{maxWidth:180}} name="month" defaultValue={new Date().getMonth()+1}>{Array.from({length:12},(_,i)=><option value={i+1} key={i}>{new Date(2020,i,1).toLocaleString('id-ID',{month:'long'})}</option>)}</select>{!readOnly&&<button className="btn">Buat Periode</button>}</form>{msg&&<div className="notice">{msg}</div>}<table className="table"><thead><tr><th>Periode</th><th>Status</th><th>Locked</th><th>Published</th><th>Aksi</th></tr></thead><tbody>{periods.map(p=><tr key={p.id}><td>{String(p.month).padStart(2,'0')}/{p.year}</td><td><span className="badge">{p.status}</span></td><td>{p.lockedAt?new Date(p.lockedAt).toLocaleString('id-ID'):'-'}</td><td>{p.publishedAt?new Date(p.publishedAt).toLocaleString('id-ID'):'-'}</td><td>{!readOnly&&p.status!=='PUBLISHED'?<button className="btn secondary" onClick={()=>advance(p.id,p.status)}>Lanjut →</button>:'-'}</td></tr>)}</tbody></table></>
+}
