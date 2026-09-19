@@ -34,7 +34,9 @@ const aliases = {
   receipt: ['No Penerimaan', 'Receipt No', 'Receive No'],
   delivery: ['No Pengiriman', 'Delivery No', 'Shipment No'],
   supplier: ['Supplier', 'Pemasok', 'Vendor'],
+  supplierCode: ['Kode Supplier', 'Supplier Code', 'Vendor Code'],
   customer: ['Customer', 'Pelanggan'],
+  customerCode: ['Kode Customer', 'Customer Code', 'Kode Pelanggan'],
   customsDocNo: ['No Dokumen Bea', 'Dokumen Bea', 'Customs Doc', 'Customs Document No'],
   customsDocType: ['Jenis Dokumen Bea', 'Customs Doc Type', 'Jenis Dokumen'],
   customsDocDate: ['Tanggal Dokumen Bea', 'Customs Doc Date'],
@@ -96,6 +98,19 @@ async function ensureItem(companyId: string, row: Record<string, any>) {
       customsUnit: clean(value(row, aliases.customsUnit)) || null,
       countryOfOrigin: clean(value(row, aliases.country)) || null,
     },
+  });
+}
+
+
+async function ensurePartner(companyId: string, row: Record<string, any>, type: 'CUSTOMER'|'SUPPLIER') {
+  const name = clean(value(row, type === 'CUSTOMER' ? aliases.customer : aliases.supplier));
+  if (!name) return null;
+  const rawCode = clean(value(row, type === 'CUSTOMER' ? aliases.customerCode : aliases.supplierCode));
+  const code = rawCode || `${type === 'CUSTOMER' ? 'CUST' : 'SUP'}-${name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)}`;
+  return prisma.partner.upsert({
+    where: { companyId_code: { companyId, code } },
+    update: { name, type },
+    create: { companyId, code, name, type },
   });
 }
 
@@ -192,9 +207,9 @@ export async function POST(req: Request) {
       let source = 'ACCURATE_IMPORT';
 
       if (importType === 'PURCHASE_RECEIPT') {
-        txType = 'INBOUND'; qty = Math.abs(qty); partnerName = clean(value(row, aliases.supplier)) || null; source = 'ACCURATE_PURCHASE';
+        txType = 'INBOUND'; qty = Math.abs(qty); const partner=await ensurePartner(u.companyId,row,'SUPPLIER'); partnerName = partner?.name || clean(value(row, aliases.supplier)) || null; source = 'ACCURATE_PURCHASE';
       } else if (importType === 'SALES_DELIVERY') {
-        txType = 'OUTBOUND'; qty = Math.abs(qty); partnerName = clean(value(row, aliases.customer)) || null; source = 'ACCURATE_SALES';
+        txType = 'OUTBOUND'; qty = Math.abs(qty); const partner=await ensurePartner(u.companyId,row,'CUSTOMER'); partnerName = partner?.name || clean(value(row, aliases.customer)) || null; source = 'ACCURATE_SALES';
       } else if (importType === 'ADJUSTMENT') {
         txType = 'ADJUSTMENT'; source = 'ACCURATE_ADJUSTMENT';
       } else if (importType === 'PRODUCTION') {

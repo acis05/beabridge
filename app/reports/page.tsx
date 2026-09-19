@@ -1,26 +1,4 @@
-import AppShell from '@/components/AppShell';
-import { getCurrentUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-
-export default async function Page(){
-  const u=await getCurrentUser();if(!u)return null;
-  const [txs,opnames]=await Promise.all([
-    prisma.transaction.findMany({where:{companyId:u.companyId},include:{item:true,warehouse:true},orderBy:{transactionAt:'asc'}}),
-    prisma.stockOpname.findMany({where:{companyId:u.companyId},include:{item:true,warehouse:true},orderBy:{opnameAt:'desc'},take:50})
-  ]);
-  const map=new Map<string,{code:string,name:string,unit:string,inb:number,out:number,adj:number,balance:number}>();
-  for(const t of txs){
-    const k=t.itemId;const v=map.get(k)||{code:t.item.code,name:t.item.name,unit:t.item.unit,inb:0,out:0,adj:0,balance:0};
-    const q=Number(t.qty);
-    if(t.type==='INBOUND')v.inb+=q;
-    else if(t.type==='OUTBOUND')v.out+=q;
-    else if(t.type==='ADJUSTMENT')v.adj+=q;
-    v.balance=v.inb-v.out+v.adj;
-    map.set(k,v);
-  }
-  return <AppShell>
-    <div className="row" style={{justifyContent:'space-between'}}><div><h1 className="section-title">Laporan Mutasi / Posisi Stok</h1><div className="muted">Ringkasan transaksi yang telah masuk ke BeaBridge.</div></div><a className="btn" href="/api/reports?format=csv">Export CSV</a></div>
-    <div className="card" style={{marginTop:16}}><div className="table-wrap"><table className="table"><thead><tr><th>Kode</th><th>Nama Barang</th><th>Satuan</th><th>Masuk</th><th>Keluar</th><th>Adjustment</th><th>Saldo</th></tr></thead><tbody>{Array.from(map.values()).map(v=><tr key={v.code}><td>{v.code}</td><td>{v.name}</td><td>{v.unit}</td><td>{v.inb}</td><td>{v.out}</td><td>{v.adj}</td><td><strong>{v.balance}</strong></td></tr>)}</tbody></table></div></div>
-    <div className="card" style={{marginTop:16}}><h3 style={{marginTop:0}}>Stock Opname Terakhir</h3><div className="table-wrap"><table className="table"><thead><tr><th>Tanggal</th><th>Barang</th><th>Gudang</th><th>Stok Sistem</th><th>Stok Fisik</th><th>Selisih</th><th>Referensi</th></tr></thead><tbody>{opnames.map(o=><tr key={o.id}><td>{o.opnameAt.toISOString().slice(0,10)}</td><td>{o.item.code} — {o.item.name}</td><td>{o.warehouse.code}</td><td>{String(o.systemQty)}</td><td>{String(o.physicalQty)}</td><td><strong>{String(o.differenceQty)}</strong></td><td>{o.referenceNo||'-'}</td></tr>)}</tbody></table></div></div>
-  </AppShell>
-}
+import AppShell from '@/components/AppShell';import {getCurrentUser} from '@/lib/auth';import {buildReport,REPORTS} from '@/lib/reporting';
+export default async function Page({searchParams}:{searchParams:Promise<Record<string,string|undefined>>}){const u=await getCurrentUser();if(!u)return null;const sp=await searchParams;const now=new Date();const report=REPORTS.find(r=>r.key===(sp.report||'inbound-doc'))||REPORTS[0];const startText=sp.start||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;const endText=sp.end||now.toISOString().slice(0,10);const start=new Date(startText);const end=new Date(endText+'T23:59:59.999');const data:any=await buildReport(u.companyId,report.key,start,end);
+ return <AppShell><div><h1 className="section-title">7 Laporan Bea Cukai</h1><div className="muted">Pilih laporan, periode, lalu drill-down atau export CSV. Klasifikasi mutasi mengikuti kategori pada Master Barang.</div></div><div className="report-grid">{REPORTS.map(r=><a key={r.key} className={r.key===report.key?'report-card active':'report-card'} href={`/reports?report=${r.key}&start=${startText}&end=${endText}`}><strong>{r.title}</strong><span>{r.desc}</span></a>)}</div><div className="card" style={{marginTop:16}}><div className="row" style={{justifyContent:'space-between'}}><div><h2 style={{margin:'0 0 4px'}}>{report.title}</h2><div className="muted">{report.desc}</div></div><a className="btn" href={`/api/reports?report=${report.key}&start=${startText}&end=${endText}`}>Export CSV</a></div><form className="row" style={{marginTop:16}}><input type="hidden" name="report" value={report.key}/><label className="muted">Dari</label><input className="input" style={{maxWidth:170}} type="date" name="start" defaultValue={startText}/><label className="muted">Sampai</label><input className="input" style={{maxWidth:170}} type="date" name="end" defaultValue={endText}/><button className="btn secondary">Tampilkan</button></form></div>
+ <div className="card" style={{marginTop:16}}><div className="table-wrap">{data.kind==='document'?<table className="table"><thead><tr><th>Tanggal</th><th>Dokumen Pabean</th><th>Referensi</th><th>Partner</th><th>Barang</th><th>Gudang</th><th>Qty</th><th>Sumber</th></tr></thead><tbody>{data.rows.map((r:any,i:number)=><tr key={i}><td>{r.date}</td><td>{r.docType||'-'} {r.docNo||'-'}<div className="muted">{r.docDate||''}</div></td><td>{r.reference||'-'}<div className="muted">{r.invoice||''}</div></td><td>{r.partner||'-'}</td><td><strong>{r.code}</strong><div className="muted">{r.name} · HS {r.hsCode||'-'}</div></td><td>{r.warehouse}</td><td>{r.qty} {r.unit}</td><td><span className="pill">{r.source}</span></td></tr>)}</tbody></table>:<table className="table"><thead><tr><th>Barang</th><th>Saldo Awal</th><th>Masuk</th><th>Keluar</th><th>Adjustment</th><th>Saldo Akhir</th><th>Stock Opname</th><th>Selisih</th></tr></thead><tbody>{data.rows.map((r:any)=><tr key={r.code}><td><strong>{r.code}</strong><div className="muted">{r.name} · {r.unit}</div></td><td>{r.opening}</td><td>{r.inbound}</td><td>{r.outbound}</td><td>{r.adjustment}</td><td><strong>{r.closing}</strong></td><td>{r.stockOpname??'-'}</td><td className={r.difference&&r.difference!==0?'text-danger':''}>{r.difference??'-'}</td></tr>)}</tbody></table>}</div>{!data.rows.length&&<div className="empty">Belum ada data untuk laporan/periode ini. Pastikan kategori barang di Master Data sudah sesuai.</div>}</div></AppShell>}

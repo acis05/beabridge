@@ -1,17 +1,6 @@
-import { getCurrentUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-
-export async function GET(){
-  const u=await getCurrentUser();
-  if(!u)return new Response('Unauthorized',{status:401});
-  const txs=await prisma.transaction.findMany({where:{companyId:u.companyId},include:{item:true,warehouse:true},orderBy:{transactionAt:'asc'}});
-  const lines=['Tanggal,Jenis,Kode Barang,Nama Barang,HS Code,Satuan,Gudang,Qty,Referensi,Invoice,Partner,Jenis Dokumen Bea,No Dokumen Bea,Tanggal Dokumen Bea,Lot/Batch,Sumber,Catatan'];
-  const esc=(x:any)=>`"${String(x??'').replaceAll('"','""')}"`;
-  for(const t of txs){
-    lines.push([
-      t.transactionAt.toISOString().slice(0,10),t.type,t.item.code,t.item.name,t.item.hsCode,t.item.unit,t.warehouse.code,String(t.qty),t.referenceNo,t.invoiceNo,t.partnerName,t.customsDocType,t.customsDocNo,t.customsDocDate?.toISOString().slice(0,10),t.lotNo,t.source,t.notes
-    ].map(esc).join(','));
-  }
-  await prisma.auditLog.create({data:{companyId:u.companyId,userId:u.id,action:'EXPORT',entity:'REPORT',metadata:{format:'CSV',rows:txs.length}}});
-  return new Response('\ufeff'+lines.join('\n'),{headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="beabridge-report.csv"'}});
-}
+import {getCurrentUser} from '@/lib/auth';import {prisma} from '@/lib/prisma';import {buildReport,REPORTS} from '@/lib/reporting';
+const esc=(x:any)=>`"${String(x??'').replaceAll('"','""')}"`;
+export async function GET(req:Request){const u=await getCurrentUser();if(!u)return new Response('Unauthorized',{status:401});const url=new URL(req.url);const report=url.searchParams.get('report')||'inbound-doc';if(!REPORTS.some(r=>r.key===report))return new Response('Bad report',{status:400});const now=new Date();const start=new Date(url.searchParams.get('start')||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`);const endText=url.searchParams.get('end')||now.toISOString().slice(0,10);const end=new Date(endText+'T23:59:59.999');const data:any=await buildReport(u.companyId,report,start,end);let lines:string[]=[];
+ if(data.kind==='document'){lines.push('Tanggal,Jenis Dokumen Pabean,No Dokumen Pabean,Tanggal Dokumen,Referensi,Invoice,Partner,Kode Barang,Nama Barang,HS Code,Satuan,Gudang,Qty,Sumber');for(const r of data.rows)lines.push([r.date,r.docType,r.docNo,r.docDate,r.reference,r.invoice,r.partner,r.code,r.name,r.hsCode,r.unit,r.warehouse,r.qty,r.source].map(esc).join(','));}
+ else{lines.push('Kode Barang,Nama Barang,HS Code,Satuan,Kategori,Saldo Awal,Pemasukan,Pengeluaran,Adjustment,Saldo Akhir,Stock Opname,Selisih,Keterangan');for(const r of data.rows)lines.push([r.code,r.name,r.hsCode,r.unit,r.category,r.opening,r.inbound,r.outbound,r.adjustment,r.closing,r.stockOpname??'',r.difference??'',r.notes].map(esc).join(','));}
+ await prisma.auditLog.create({data:{companyId:u.companyId,userId:u.id,action:'EXPORT',entity:'REPORT',metadata:{report,start:start.toISOString(),end:end.toISOString(),rows:data.rows.length}}});return new Response('\ufeff'+lines.join('\n'),{headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':`attachment; filename="beabridge-${report}-${start.toISOString().slice(0,10)}-${endText}.csv"`}})}
